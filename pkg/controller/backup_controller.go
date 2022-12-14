@@ -272,6 +272,9 @@ func (b *backupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}()
 
+	c.metrics.IncActiveBackup()
+	defer c.metrics.DecActiveBackup()
+
 	log.Debug("Running backup")
 
 	backupScheduleName := request.GetLabels()[velerov1api.ScheduleNameLabel]
