@@ -26,7 +26,6 @@ import (
 	. "github.com/onsi/gomega"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
-	waitutil "k8s.io/apimachinery/pkg/util/wait"
 	kbclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -100,7 +99,7 @@ func SSRTest() {
 			fmt.Sprintf("ServerVersion of ssr object in %s namespace should be empty", testNS))
 
 		By(fmt.Sprintf("Waiting ssr object in %s namespace deleted", veleroCfg.VeleroNamespace))
-		err = waitutil.PollImmediateInfinite(5*time.Second,
+		err = wait.PollImmediateInfinite(5*time.Second,
 			func() (bool, error) {
 				if err = veleroCfg.ClientToInstallVelero.Kubebuilder.List(ctx, ssrListResp, &kbclient.ListOptions{Namespace: veleroCfg.VeleroNamespace}); err != nil {
 					if apierrors.IsNotFound(err) {

@@ -25,7 +25,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	snapshotv1api "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
-	v1 "github.com/kubernetes-csi/external-snapshotter/client/v7/apis/volumesnapshot/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -163,7 +162,7 @@ func TestExecute(t *testing.T) {
 
 			if boolptr.IsSetToTrue(tc.backup.Spec.SnapshotMoveData) == true {
 				go func() {
-					var vsList v1.VolumeSnapshotList
+					var vsList snapshotv1api.VolumeSnapshotList
 					err := wait.PollUntilContextTimeout(context.Background(), 1*time.Second, 10*time.Second, true, func(ctx context.Context) (bool, error) {
 						err = pvcBIA.crClient.List(ctx, &vsList, &crclient.ListOptions{Namespace: tc.pvc.Namespace})
 
@@ -178,7 +177,7 @@ func TestExecute(t *testing.T) {
 					require.NoError(t, err)
 					vscName := "testVSC"
 					readyToUse := true
-					vsList.Items[0].Status = &v1.VolumeSnapshotStatus{
+					vsList.Items[0].Status = &snapshotv1api.VolumeSnapshotStatus{
 						BoundVolumeSnapshotContentName: &vscName,
 						ReadyToUse:                     &readyToUse,
 					}
