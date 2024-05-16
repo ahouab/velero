@@ -7,6 +7,7 @@ run:
 output:
   formats:
     - format: colored-line-number
+      path: stdout
   print-issued-lines: true
   print-linter-name: true
   uniq-by-line: true
@@ -59,10 +60,10 @@ linters-settings:
       - suite-dont-use-pkg
       - suite-extra-assert-call
       - suite-thelper
-      - nil-compare
     enable:
       - empty
       - len
+      - nil-compare
   unparam:
     # TODO: enable
     check-exported: false
@@ -130,7 +131,6 @@ issues:
       linters:
         - dupword
         - errcheck
-        - ginkgolinter
         - goconst
         - gosec
         - govet
@@ -141,15 +141,12 @@ issues:
         - unused
     - path: test/
       linters:
-        - bodyclose
         - dupword
         - errcheck
         - goconst
         - gosec
         - gosimple
-        - ginkgolinter
         - nilerr
-        - noctx
         - staticcheck
         - stylecheck
         - unconvert
