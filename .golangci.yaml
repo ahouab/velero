@@ -121,10 +121,6 @@ issues:
       text: "github.com/golang/protobuf/proto"
     - linters:
         - staticcheck
-      # Kopia still depends on this.
-      text: "github.com/Azure/azure-sdk-for-go/services/storage/mgmt/2019-06-01/storage"
-    - linters:
-        - staticcheck
       # No need to report deprecate for DefaultVolumesToRestic.
       text: "DefaultVolumesToRestic"
      # TODO: remove all excludes for test files
