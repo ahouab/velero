@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	controllerclient "sigs.k8s.io/controller-runtime/pkg/client"
 	kbclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	velerov1api "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -151,14 +152,14 @@ func TestCreateCommand(t *testing.T) {
 		fromSchedule := "schedule-name-1"
 		flags.Parse([]string{"--from-schedule", fromSchedule})
 
-		kubeclient := velerotest.NewFakeControllerRuntimeClient(t).(kbclient.WithWatch)
+		kbclient := velerotest.NewFakeControllerRuntimeClient(t).(kbclient.WithWatch)
 		schedule := builder.ForSchedule(cmdtest.VeleroNameSpace, fromSchedule).Result()
-		require.NoError(t, kubeclient.Create(context.Background(), schedule, &kbclient.CreateOptions{}))
+		require.NoError(t, kbclient.Create(context.Background(), schedule, &controllerclient.CreateOptions{}))
 		backup := builder.ForBackup(cmdtest.VeleroNameSpace, "test-backup").FromSchedule(schedule).Phase(velerov1api.BackupPhaseCompleted).Result()
-		require.NoError(t, kubeclient.Create(context.Background(), backup, &kbclient.CreateOptions{}))
+		require.NoError(t, kbclient.Create(context.Background(), backup, &controllerclient.CreateOptions{}))
 
 		f.On("Namespace").Return(cmdtest.VeleroNameSpace)
-		f.On("KubebuilderWatchClient").Return(kubeclient, nil)
+		f.On("KubebuilderWatchClient").Return(kbclient, nil)
 
 		require.NoError(t, o.Complete(args, f))
 		require.NoError(t, o.Validate(c, []string{}, f))
@@ -177,10 +178,10 @@ func TestCreateCommand(t *testing.T) {
 		flags.Parse([]string{"--wait", "true"})
 		flags.Parse([]string{"--from-backup", nonExistedBackupName})
 
-		kubeclient := velerotest.NewFakeControllerRuntimeClient(t).(kbclient.WithWatch)
+		kbclient := velerotest.NewFakeControllerRuntimeClient(t).(kbclient.WithWatch)
 
 		f.On("Namespace").Return(cmdtest.VeleroNameSpace)
-		f.On("KubebuilderWatchClient").Return(kubeclient, nil)
+		f.On("KubebuilderWatchClient").Return(kbclient, nil)
 
 		require.NoError(t, o.Complete(nil, f))
 		err := o.Validate(c, []string{}, f)

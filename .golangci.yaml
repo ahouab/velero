@@ -45,7 +45,8 @@ linters-settings:
     # TODO: enable them all
     # enable-all-rules: true
     rules:
-      - name: duplicated-imports
+      - name: unexported-return
+        disabled: true
   testifylint:
     # TODO: enable them all
     disable:

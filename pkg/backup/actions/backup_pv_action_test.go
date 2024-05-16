@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	corev1api "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -122,21 +123,21 @@ func TestBackupPVAction(t *testing.T) {
 
 	// non-empty spec.volumeName when status.phase is 'Pending'
 	// should result in no error and no additional items
-	pvc.Object["status"].(map[string]interface{})["phase"] = corev1.ClaimPending
+	pvc.Object["status"].(map[string]interface{})["phase"] = corev1api.ClaimPending
 	_, additional, err = a.Execute(pvc, backup)
 	require.NoError(t, err)
 	require.Empty(t, additional)
 
 	// non-empty spec.volumeName when status.phase is 'Lost'
 	// should result in no error and no additional items
-	pvc.Object["status"].(map[string]interface{})["phase"] = corev1.ClaimLost
+	pvc.Object["status"].(map[string]interface{})["phase"] = corev1api.ClaimLost
 	_, additional, err = a.Execute(pvc, backup)
 	require.NoError(t, err)
 	require.Empty(t, additional)
 
 	// non-empty spec.volumeName when status.phase is 'Bound'
 	// should result in no error and one additional item for the PV
-	pvc.Object["status"].(map[string]interface{})["phase"] = corev1.ClaimBound
+	pvc.Object["status"].(map[string]interface{})["phase"] = corev1api.ClaimBound
 	_, additional, err = a.Execute(pvc, backup)
 	require.NoError(t, err)
 	require.Len(t, additional, 1)

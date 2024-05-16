@@ -22,6 +22,7 @@ import (
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/vmware-tanzu/velero/pkg/util/boolptr"
@@ -69,9 +70,9 @@ func CreatePod(client TestClient, ns, name, sc, pvcName string, volumeNameList [
 			Annotations: ann,
 		},
 		Spec: corev1.PodSpec{
-			SecurityContext: &corev1.PodSecurityContext{
+			SecurityContext: &v1.PodSecurityContext{
 				FSGroup:             func(i int64) *int64 { return &i }(65534),
-				FSGroupChangePolicy: func(policy corev1.PodFSGroupChangePolicy) *corev1.PodFSGroupChangePolicy { return &policy }(corev1.FSGroupChangeAlways),
+				FSGroupChangePolicy: func(policy v1.PodFSGroupChangePolicy) *v1.PodFSGroupChangePolicy { return &policy }(v1.FSGroupChangeAlways),
 			},
 			Containers: []corev1.Container{
 				{
@@ -80,16 +81,16 @@ func CreatePod(client TestClient, ns, name, sc, pvcName string, volumeNameList [
 					Command:      []string{"sleep", "3600"},
 					VolumeMounts: vmList,
 					// Make pod obeys the restricted pod security standards.
-					SecurityContext: &corev1.SecurityContext{
+					SecurityContext: &v1.SecurityContext{
 						AllowPrivilegeEscalation: boolptr.False(),
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{"ALL"},
+						Capabilities: &v1.Capabilities{
+							Drop: []v1.Capability{"ALL"},
 						},
 						RunAsNonRoot: boolptr.True(),
 						RunAsUser:    func(i int64) *int64 { return &i }(65534),
 						RunAsGroup:   func(i int64) *int64 { return &i }(65534),
-						SeccompProfile: &corev1.SeccompProfile{
-							Type: corev1.SeccompProfileTypeRuntimeDefault,
+						SeccompProfile: &v1.SeccompProfile{
+							Type: v1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
 				},

@@ -31,6 +31,7 @@ import (
 	"github.com/vmware-tanzu/velero/test/perf/metrics"
 	. "github.com/vmware-tanzu/velero/test/util/k8s"
 	"github.com/vmware-tanzu/velero/test/util/report"
+	"github.com/vmware-tanzu/velero/test/util/velero"
 	. "github.com/vmware-tanzu/velero/test/util/velero"
 )
 
@@ -273,7 +274,7 @@ func (t *TestCase) MonitorMetircs(ctx context.Context, collectors *metrics.Metri
 	}
 	collectors.RegisterOneTimeMetric(timeMetrics)
 
-	veleroPodList, err := ListVeleroPods(ctx, VeleroCfg.VeleroNamespace)
+	veleroPodList, err := velero.ListVeleroPods(ctx, VeleroCfg.VeleroNamespace)
 	if err != nil {
 		fmt.Printf("couldn't monitor velero pod metrics for failed to get velero pod with err %v\n", err)
 	} else {
