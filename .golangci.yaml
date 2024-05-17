@@ -61,10 +61,7 @@ linters-settings:
       - suite-dont-use-pkg
       - suite-extra-assert-call
       - suite-thelper
-    enable:
-      - empty
-      - len
-      - nil-compare
+    enable-all: true
   unparam:
     # TODO: enable
     check-exported: false
