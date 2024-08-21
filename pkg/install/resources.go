@@ -350,7 +350,6 @@ func AllResources(o *VeleroOptions) *unstructured.UnstructuredList {
 		WithPodVolumeOperationTimeout(o.PodVolumeOperationTimeout),
 		WithUploaderType(o.UploaderType),
 		WithScheduleSkipImmediately(o.ScheduleSkipImmediately),
-		WithMaintenanceConfig(o.MaintenanceCfg),
 	}
 
 	if len(o.Features) > 0 {

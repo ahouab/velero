@@ -266,20 +266,20 @@ func TestGetLatestMaintenanceJob(t *testing.T) {
 func TestBuildMaintenanceJob(t *testing.T) {
 	testCases := []struct {
 		name            string
-		m               MaintenanceConfig
+		m               *JobConfigs
 		deploy          *appsv1.Deployment
+		logLevel        logrus.Level
+		logFormat       *logging.FormatFlag
 		expectedJobName string
 		expectedError   bool
 	}{
 		{
 			name: "Valid maintenance job",
-			m: MaintenanceConfig{
-				CPURequest:   "100m",
-				MemRequest:   "128Mi",
-				CPULimit:     "200m",
-				MemLimit:     "256Mi",
-				LogLevelFlag: logging.LogLevelFlag(logrus.InfoLevel),
-				FormatFlag:   logging.NewFormatFlag(),
+			m: &JobConfigs{
+				CPURequest: "100m",
+				MemRequest: "128Mi",
+				CPULimit:   "200m",
+				MemLimit:   "256Mi",
 			},
 			deploy: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -299,19 +299,21 @@ func TestBuildMaintenanceJob(t *testing.T) {
 					},
 				},
 			},
+			logLevel:        logrus.InfoLevel,
+			logFormat:       logging.NewFormatFlag(),
 			expectedJobName: "test-123-maintain-job",
 			expectedError:   false,
 		},
 		{
 			name: "Error getting Velero server deployment",
-			m: MaintenanceConfig{
-				CPURequest:   "100m",
-				MemRequest:   "128Mi",
-				CPULimit:     "200m",
-				MemLimit:     "256Mi",
-				LogLevelFlag: logging.LogLevelFlag(logrus.InfoLevel),
-				FormatFlag:   logging.NewFormatFlag(),
+			m: &JobConfigs{
+				CPURequest: "100m",
+				MemRequest: "128Mi",
+				CPULimit:   "200m",
+				MemLimit:   "256Mi",
 			},
+			logLevel:        logrus.InfoLevel,
+			logFormat:       logging.NewFormatFlag(),
 			expectedJobName: "",
 			expectedError:   true,
 		},
@@ -350,7 +352,7 @@ func TestBuildMaintenanceJob(t *testing.T) {
 			cli := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
 
 			// Call the function to test
-			job, err := buildMaintenanceJob(tc.m, param, cli, "velero")
+			job, err := buildMaintenanceJob(tc.m, param, cli, "velero", logrus.InfoLevel, logging.NewFormatFlag())
 
 			// Check the error
 			if tc.expectedError {
@@ -389,8 +391,8 @@ func TestBuildMaintenanceJob(t *testing.T) {
 					fmt.Sprintf("--repo-name=%s", param.BackupRepo.Spec.VolumeNamespace),
 					fmt.Sprintf("--repo-type=%s", param.BackupRepo.Spec.RepositoryType),
 					fmt.Sprintf("--backup-storage-location=%s", param.BackupLocation.Name),
-					fmt.Sprintf("--log-level=%s", tc.m.LogLevelFlag.String()),
-					fmt.Sprintf("--log-format=%s", tc.m.FormatFlag.String()),
+					fmt.Sprintf("--log-level=%s", tc.logLevel.String()),
+					fmt.Sprintf("--log-format=%s", tc.logFormat.String()),
 				}
 				assert.Equal(t, expectedArgs, container.Args)
 

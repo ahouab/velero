@@ -29,6 +29,7 @@ import (
 	velerov1api "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	"github.com/vmware-tanzu/velero/pkg/repository/provider"
 	"github.com/vmware-tanzu/velero/pkg/util/filesystem"
+	"github.com/vmware-tanzu/velero/pkg/util/logging"
 )
 
 // SnapshotIdentifier uniquely identifies a snapshot
@@ -92,14 +93,18 @@ type Manager interface {
 }
 
 type manager struct {
-	namespace      string
-	providers      map[string]provider.Provider
-	client         client.Client
-	repoLocker     *RepoLocker
-	repoEnsurer    *Ensurer
-	fileSystem     filesystem.Interface
-	maintenanceCfg MaintenanceConfig
-	log            logrus.FieldLogger
+	namespace string
+	providers map[string]provider.Provider
+	// client is the Velero controller manager's client.
+	// It's limited to resources in the Velero namespace.
+	client                   client.Client
+	repoLocker               *RepoLocker
+	repoEnsurer              *Ensurer
+	fileSystem               filesystem.Interface
+	repoMaintenanceJobConfig string
+	log                      logrus.FieldLogger
+	logLevel                 logrus.Level
+	logFormat                *logging.FormatFlag
 }
 
 // NewManager create a new repository manager.
@@ -110,18 +115,22 @@ func NewManager(
 	repoEnsurer *Ensurer,
 	credentialFileStore credentials.FileStore,
 	credentialSecretStore credentials.SecretStore,
-	maintenanceCfg MaintenanceConfig,
+	repoMaintenanceJobConfig string,
 	log logrus.FieldLogger,
+	logLevel logrus.Level,
+	logFormat *logging.FormatFlag,
 ) Manager {
 	mgr := &manager{
-		namespace:      namespace,
-		client:         client,
-		providers:      map[string]provider.Provider{},
-		repoLocker:     repoLocker,
-		repoEnsurer:    repoEnsurer,
-		fileSystem:     filesystem.NewFileSystem(),
-		maintenanceCfg: maintenanceCfg,
-		log:            log,
+		namespace:                namespace,
+		client:                   client,
+		providers:                map[string]provider.Provider{},
+		repoLocker:               repoLocker,
+		repoEnsurer:              repoEnsurer,
+		fileSystem:               filesystem.NewFileSystem(),
+		repoMaintenanceJobConfig: repoMaintenanceJobConfig,
+		log:                      log,
+		logLevel:                 logLevel,
+		logFormat:                logFormat,
 	}
 
 	mgr.providers[velerov1api.BackupRepositoryTypeRestic] = provider.NewResticRepositoryProvider(credentialFileStore, mgr.fileSystem, mgr.log)
@@ -204,9 +213,28 @@ func (m *manager) PruneRepo(repo *velerov1api.BackupRepository) error {
 		return nil
 	}
 
+	jobConfig, err := getMaintenanceJobConfig(
+		context.Background(),
+		m.client,
+		m.log,
+		m.namespace,
+		m.repoMaintenanceJobConfig,
+		repo,
+	)
+	if err != nil {
+		log.Infof("Cannot find the repo-maintenance-job-config ConfigMap: %s. Use default value.", err.Error())
+	}
+
 	log.Info("Start to maintenance repo")
 
-	maintenanceJob, err := buildMaintenanceJob(m.maintenanceCfg, param, m.client, m.namespace)
+	maintenanceJob, err := buildMaintenanceJob(
+		jobConfig,
+		param,
+		m.client,
+		m.namespace,
+		m.logLevel,
+		m.logFormat,
+	)
 	if err != nil {
 		return errors.Wrap(err, "error to build maintenance job")
 	}
@@ -219,8 +247,11 @@ func (m *manager) PruneRepo(repo *velerov1api.BackupRepository) error {
 	log.Debug("Creating maintenance job")
 
 	defer func() {
-		if err := deleteOldMaintenanceJobs(m.client, param.BackupRepo.Name,
-			m.maintenanceCfg.KeepLatestMaitenanceJobs); err != nil {
+		if err := deleteOldMaintenanceJobs(
+			m.client,
+			param.BackupRepo.Name,
+			DefaultKeepLatestMaintenanceJobs,
+		); err != nil {
 			log.WithError(err).Error("Failed to delete maintenance job")
 		}
 	}()

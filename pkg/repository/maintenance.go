@@ -18,10 +18,13 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
 
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
@@ -31,16 +34,17 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/pkg/errors"
-
+	velerov1api "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	"github.com/vmware-tanzu/velero/pkg/repository/provider"
+	velerotypes "github.com/vmware-tanzu/velero/pkg/types"
+	csiutil "github.com/vmware-tanzu/velero/pkg/util/csi"
 	"github.com/vmware-tanzu/velero/pkg/util/kube"
 	"github.com/vmware-tanzu/velero/pkg/util/logging"
 	veleroutil "github.com/vmware-tanzu/velero/pkg/util/velero"
 )
 
 const RepositoryNameLabel = "velero.io/repo-name"
-const DefaultKeepLatestMaitenanceJobs = 3
+const DefaultKeepLatestMaintenanceJobs = 3
 const DefaultMaintenanceJobCPURequest = "0"
 const DefaultMaintenanceJobCPULimit = "0"
 const DefaultMaintenanceJobMemRequest = "0"
@@ -55,6 +59,19 @@ type MaintenanceConfig struct {
 	MemLimit                 string
 	LogLevelFlag             *logging.LevelFlag
 	FormatFlag               *logging.FormatFlag
+	Affinity                 *v1.Affinity
+}
+
+type MaintenanceConfigMap map[string]JobConfigs
+
+type JobConfigs struct {
+	// LoadAffinities is the config for repository maintenance job load affinity.
+	LoadAffinities []*velerotypes.LoadAffinity `json:"loadAffinity,omitempty"`
+
+	CPURequest string `json:"cpuRequest,omitempty"`
+	MemRequest string `json:"memRequest,omitempty"`
+	CPULimit   string `json:"cpuLimit,omitempty"`
+	MemLimit   string `json:"memLimit,omitempty"`
 }
 
 func generateJobName(repo string) string {
@@ -68,7 +85,14 @@ func generateJobName(repo string) string {
 	return jobName
 }
 
-func buildMaintenanceJob(m MaintenanceConfig, param provider.RepoParam, cli client.Client, namespace string) (*batchv1.Job, error) {
+func buildMaintenanceJob(
+	config *JobConfigs,
+	param provider.RepoParam,
+	cli client.Client,
+	namespace string,
+	logLevel logrus.Level,
+	logFormat *logging.FormatFlag,
+) (*batchv1.Job, error) {
 	// Get the Velero server deployment
 	deployment := &appsv1.Deployment{}
 	err := cli.Get(context.TODO(), types.NamespacedName{Name: "velero", Namespace: namespace}, deployment)
@@ -92,20 +116,25 @@ func buildMaintenanceJob(m MaintenanceConfig, param provider.RepoParam, cli clie
 	image := veleroutil.GetVeleroServerImage(deployment)
 
 	// Set resource limits and requests
-	if m.CPURequest == "" {
-		m.CPURequest = DefaultMaintenanceJobCPURequest
+	cpuRequest := DefaultMaintenanceJobCPURequest
+	memRequest := DefaultMaintenanceJobMemRequest
+	cpuLimit := DefaultMaintenanceJobCPULimit
+	memLimit := DefaultMaintenanceJobMemLimit
+	if config != nil {
+		if config.CPURequest != "" {
+			cpuRequest = config.CPURequest
+		}
+		if config.MemRequest != "" {
+			memRequest = config.MemRequest
+		}
+		if config.CPULimit != "" {
+			cpuLimit = config.CPULimit
+		}
+		if config.MemLimit != "" {
+			memLimit = config.MemLimit
+		}
 	}
-	if m.MemRequest == "" {
-		m.MemRequest = DefaultMaintenanceJobMemRequest
-	}
-	if m.CPULimit == "" {
-		m.CPULimit = DefaultMaintenanceJobCPULimit
-	}
-	if m.MemLimit == "" {
-		m.MemLimit = DefaultMaintenanceJobMemLimit
-	}
-
-	resources, err := kube.ParseResourceRequirements(m.CPURequest, m.MemRequest, m.CPULimit, m.MemLimit)
+	resources, err := kube.ParseResourceRequirements(cpuRequest, memRequest, cpuLimit, memLimit)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse resource requirements for maintenance job")
 	}
@@ -115,8 +144,8 @@ func buildMaintenanceJob(m MaintenanceConfig, param provider.RepoParam, cli clie
 	args = append(args, fmt.Sprintf("--repo-name=%s", param.BackupRepo.Spec.VolumeNamespace))
 	args = append(args, fmt.Sprintf("--repo-type=%s", param.BackupRepo.Spec.RepositoryType))
 	args = append(args, fmt.Sprintf("--backup-storage-location=%s", param.BackupLocation.Name))
-	args = append(args, fmt.Sprintf("--log-level=%s", m.LogLevelFlag.String()))
-	args = append(args, fmt.Sprintf("--log-format=%s", m.FormatFlag.String()))
+	args = append(args, fmt.Sprintf("--log-level=%s", logLevel.String()))
+	args = append(args, fmt.Sprintf("--log-format=%s", logFormat.String()))
 
 	// build the maintenance job
 	job := &batchv1.Job{
@@ -156,9 +185,14 @@ func buildMaintenanceJob(m MaintenanceConfig, param provider.RepoParam, cli clie
 		},
 	}
 
-	if affinity := veleroutil.GetAffinityFromVeleroServer(deployment); affinity != nil {
-		job.Spec.Template.Spec.Affinity = affinity
+	var affinity *v1.Affinity
+	if config != nil && len(config.LoadAffinities) > 0 {
+		affinity = csiutil.ToSystemAffinity(config.LoadAffinities)
 	}
+	if affinity == nil {
+		affinity = veleroutil.GetAffinityFromVeleroServer(deployment)
+	}
+	job.Spec.Template.Spec.Affinity = affinity
 
 	if tolerations := veleroutil.GetTolerationsFromVeleroServer(deployment); tolerations != nil {
 		job.Spec.Template.Spec.Tolerations = tolerations
@@ -261,4 +295,99 @@ func getLatestMaintenanceJob(cli client.Client, ns string) (*batchv1.Job, error)
 	})
 
 	return &jobList.Items[0], nil
+}
+
+// getMaintenanceJobConfig is called to get the Maintenance Job Config for the
+// BackupRepository specified by the repo parameter.
+//
+// Params:
+//
+//	veleroNamespace: the Velero-installed namespace. It's used to retrieve the BackupRepository.
+//	repo: the BackupRepository to get the Job config.
+func getMaintenanceJobConfig(
+	ctx context.Context,
+	cli client.Client,
+	logger logrus.FieldLogger,
+	veleroNamespace string,
+	repoMaintenanceJobConfig string,
+	repo *velerov1api.BackupRepository,
+) (*JobConfigs, error) {
+	var cm v1.ConfigMap
+	if err := cli.Get(
+		ctx,
+		types.NamespacedName{
+			Namespace: veleroNamespace,
+			Name:      repoMaintenanceJobConfig,
+		},
+		&cm,
+	); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		} else {
+			return nil, errors.Wrapf(
+				err,
+				"fail to get repo maintenance job configs %s", repoMaintenanceJobConfig)
+		}
+	}
+
+	if cm.Data == nil {
+		return nil, errors.Errorf("data is not available in config map %s", repoMaintenanceJobConfig)
+	}
+
+	jsonString := ""
+	for _, v := range cm.Data {
+		jsonString = v
+	}
+
+	var configs MaintenanceConfigMap
+	if err := json.Unmarshal([]byte(jsonString), &configs); err != nil {
+		return nil, errors.Wrapf(err, "error to unmarshal configs from %s", repoMaintenanceJobConfig)
+	}
+
+	// Generate the BackupRepository key.
+	// If using the BackupRepository name as the is more intuitive,
+	// but the BackupRepository generation is dynamic. We cannot assume
+	// they are ready when installing Velero.
+	// Instead we use the volume source namespace, BSL name, and the uploader
+	// type to represent the BackupRepository. The combination of those three
+	// keys can identify a unique BackupRepository.
+	repoJobConfigKey := repo.Spec.VolumeNamespace + "-" +
+		repo.Spec.BackupStorageLocation + "-" + repo.Spec.RepositoryType
+
+	var result *JobConfigs
+	if _, ok := configs[repoJobConfigKey]; ok {
+		logger.Debug("Find the repo maintenance config %s for repo %s", repoJobConfigKey, repo.Name)
+		result = new(JobConfigs)
+		*result = configs[repoJobConfigKey]
+	}
+
+	if _, ok := configs["global"]; ok {
+		logger.Debug("Find the global repo maintenance config for repo %s", repo.Name)
+
+		if result == nil {
+			result = new(JobConfigs)
+		}
+
+		if result.CPULimit == "" {
+			result.CPULimit = configs["global"].CPULimit
+		}
+		if result.CPURequest == "" {
+			result.CPURequest = configs["global"].CPURequest
+		}
+		if result.MemLimit == "" {
+			result.MemLimit = configs["global"].MemLimit
+		}
+		if result.MemRequest == "" {
+			result.MemRequest = configs["global"].MemRequest
+		}
+		if len(result.LoadAffinities) == 0 {
+			result.LoadAffinities = configs["global"].LoadAffinities
+		}
+	}
+
+	if result != nil {
+		logger.Debug("The content of the Maintenance Job Config: %+v", *result)
+	}
+
+	return result, nil
 }

@@ -19,6 +19,7 @@ package repository
 import (
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kbclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,7 +29,7 @@ import (
 
 func TestGetRepositoryProvider(t *testing.T) {
 	var fakeClient kbclient.Client
-	mgr := NewManager("", fakeClient, nil, nil, nil, nil, MaintenanceConfig{}, nil).(*manager)
+	mgr := NewManager("", fakeClient, nil, nil, nil, nil, "", nil, logrus.InfoLevel, nil).(*manager)
 	repo := &velerov1.BackupRepository{}
 
 	// empty repository type

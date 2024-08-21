@@ -179,12 +179,6 @@ func WithScheduleSkipImmediately(b bool) podTemplateOption {
 	}
 }
 
-func WithMaintenanceConfig(config repository.MaintenanceConfig) podTemplateOption {
-	return func(c *podTemplateConfig) {
-		c.maintenanceConfig = config
-	}
-}
-
 func Deployment(namespace string, opts ...podTemplateOption) *appsv1.Deployment {
 	// TODO: Add support for server args
 	c := &podTemplateConfig{
@@ -240,26 +234,6 @@ func Deployment(namespace string, opts ...podTemplateOption) *appsv1.Deployment 
 
 	if c.podVolumeOperationTimeout > 0 {
 		args = append(args, fmt.Sprintf("--fs-backup-timeout=%v", c.podVolumeOperationTimeout))
-	}
-
-	if c.maintenanceConfig.KeepLatestMaitenanceJobs > 0 {
-		args = append(args, fmt.Sprintf("--keep-latest-maintenance-jobs=%d", c.maintenanceConfig.KeepLatestMaitenanceJobs))
-	}
-
-	if c.maintenanceConfig.CPULimit != "" {
-		args = append(args, fmt.Sprintf("--maintenance-job-cpu-limit=%s", c.maintenanceConfig.CPULimit))
-	}
-
-	if c.maintenanceConfig.CPURequest != "" {
-		args = append(args, fmt.Sprintf("--maintenance-job-cpu-request=%s", c.maintenanceConfig.CPURequest))
-	}
-
-	if c.maintenanceConfig.MemLimit != "" {
-		args = append(args, fmt.Sprintf("--maintenance-job-mem-limit=%s", c.maintenanceConfig.MemLimit))
-	}
-
-	if c.maintenanceConfig.MemRequest != "" {
-		args = append(args, fmt.Sprintf("--maintenance-job-mem-request=%s", c.maintenanceConfig.MemRequest))
 	}
 
 	deployment := &appsv1.Deployment{

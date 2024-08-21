@@ -139,8 +139,8 @@ type serverConfig struct {
 	defaultSnapshotMoveData                                                 bool
 	disableInformerCache                                                    bool
 	scheduleSkipImmediately                                                 bool
-	maintenanceCfg                                                          repository.MaintenanceConfig
-	backukpRepoConfig                                                       string
+	backupRepoConfig                                                        string
+	repoMaintenanceJobConfig                                                string
 }
 
 func NewCommand(f client.Factory) *cobra.Command {
@@ -172,9 +172,6 @@ func NewCommand(f client.Factory) *cobra.Command {
 			defaultSnapshotMoveData:        false,
 			disableInformerCache:           defaultDisableInformerCache,
 			scheduleSkipImmediately:        false,
-			maintenanceCfg: repository.MaintenanceConfig{
-				KeepLatestMaitenanceJobs: repository.DefaultKeepLatestMaitenanceJobs,
-			},
 		}
 	)
 
@@ -248,17 +245,20 @@ func NewCommand(f client.Factory) *cobra.Command {
 	command.Flags().BoolVar(&config.defaultSnapshotMoveData, "default-snapshot-move-data", config.defaultSnapshotMoveData, "Move data by default for all snapshots supporting data movement.")
 	command.Flags().BoolVar(&config.disableInformerCache, "disable-informer-cache", config.disableInformerCache, "Disable informer cache for Get calls on restore. With this enabled, it will speed up restore in cases where there are backup resources which already exist in the cluster, but for very large clusters this will increase velero memory usage. Default is false (don't disable).")
 	command.Flags().BoolVar(&config.scheduleSkipImmediately, "schedule-skip-immediately", config.scheduleSkipImmediately, "Skip the first scheduled backup immediately after creating a schedule. Default is false (don't skip).")
-	command.Flags().IntVar(&config.maintenanceCfg.KeepLatestMaitenanceJobs, "keep-latest-maintenance-jobs", config.maintenanceCfg.KeepLatestMaitenanceJobs, "Number of latest maintenance jobs to keep each repository. Optional.")
-	command.Flags().StringVar(&config.maintenanceCfg.CPURequest, "maintenance-job-cpu-request", config.maintenanceCfg.CPURequest, "CPU request for maintenance job. Default is no limit.")
-	command.Flags().StringVar(&config.maintenanceCfg.MemRequest, "maintenance-job-mem-request", config.maintenanceCfg.MemRequest, "Memory request for maintenance job. Default is no limit.")
-	command.Flags().StringVar(&config.maintenanceCfg.CPULimit, "maintenance-job-cpu-limit", config.maintenanceCfg.CPULimit, "CPU limit for maintenance job. Default is no limit.")
-	command.Flags().StringVar(&config.maintenanceCfg.MemLimit, "maintenance-job-mem-limit", config.maintenanceCfg.MemLimit, "Memory limit for maintenance job. Default is no limit.")
 
-	command.Flags().StringVar(&config.backukpRepoConfig, "backup-repository-config", config.backukpRepoConfig, "The name of configMap containing backup repository configurations.")
+	command.Flags().StringVar(
+		&config.backupRepoConfig,
+		"backup-repository-config",
+		config.backupRepoConfig,
+		"The name of configMap containing backup repository configurations.",
+	)
+	command.Flags().StringVar(
+		&config.repoMaintenanceJobConfig,
+		"repo-maintenance-job-config",
+		config.repoMaintenanceJobConfig,
+		"The name of ConfigMap containing repository maintenance Job configurations.",
+	)
 
-	// maintenance job log setting inherited from velero server
-	config.maintenanceCfg.FormatFlag = config.formatFlag
-	config.maintenanceCfg.LogLevelFlag = logLevelFlag
 	return command
 }
 
@@ -667,7 +667,18 @@ func (s *server) initRepoManager() error {
 	s.repoLocker = repository.NewRepoLocker()
 	s.repoEnsurer = repository.NewEnsurer(s.mgr.GetClient(), s.logger, s.config.resourceTimeout)
 
-	s.repoManager = repository.NewManager(s.namespace, s.mgr.GetClient(), s.repoLocker, s.repoEnsurer, s.credentialFileStore, s.credentialSecretStore, s.config.maintenanceCfg, s.logger)
+	s.repoManager = repository.NewManager(
+		s.namespace,
+		s.mgr.GetClient(),
+		s.repoLocker,
+		s.repoEnsurer,
+		s.credentialFileStore,
+		s.credentialSecretStore,
+		s.config.repoMaintenanceJobConfig,
+		s.logger,
+		s.logLevel,
+		s.config.formatFlag,
+	)
 
 	return nil
 }
@@ -881,7 +892,14 @@ func (s *server) runControllers(defaultVolumeSnapshotLocations map[string]string
 	}
 
 	if _, ok := enabledRuntimeControllers[controller.BackupRepo]; ok {
-		if err := controller.NewBackupRepoReconciler(s.namespace, s.logger, s.mgr.GetClient(), s.config.repoMaintenanceFrequency, s.config.backukpRepoConfig, s.repoManager).SetupWithManager(s.mgr); err != nil {
+		if err := controller.NewBackupRepoReconciler(
+			s.namespace,
+			s.logger,
+			s.mgr.GetClient(),
+			s.config.repoMaintenanceFrequency,
+			s.config.backupRepoConfig,
+			s.repoManager,
+		).SetupWithManager(s.mgr); err != nil {
 			s.logger.Fatal(err, "unable to create controller", "controller", controller.BackupRepo)
 		}
 	}
