@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/vmware-tanzu/velero/pkg/nodeagent"
+	velerotypes "github.com/vmware-tanzu/velero/pkg/types"
 	"github.com/vmware-tanzu/velero/pkg/util/boolptr"
 	"github.com/vmware-tanzu/velero/pkg/util/csi"
 	"github.com/vmware-tanzu/velero/pkg/util/kube"
@@ -66,7 +67,7 @@ type CSISnapshotExposeParam struct {
 	VolumeSize resource.Quantity
 
 	// Affinity specifies the node affinity of the backup pod
-	Affinity *nodeagent.LoadAffinity
+	Affinity *velerotypes.LoadAffinity
 
 	// BackupPVCConfig is the config for backupPVC (intermediate PVC) of snapshot data movement
 	BackupPVCConfig map[string]nodeagent.BackupPVC
@@ -191,7 +192,14 @@ func (e *csiSnapshotExposer) Expose(ctx context.Context, ownerObject corev1.Obje
 		}
 	}()
 
-	backupPod, err := e.createBackupPod(ctx, ownerObject, backupPVC, csiExposeParam.OperationTimeout, csiExposeParam.HostingPodLabels, csiExposeParam.Affinity)
+	backupPod, err := e.createBackupPod(
+		ctx,
+		ownerObject,
+		backupPVC,
+		csiExposeParam.OperationTimeout,
+		csiExposeParam.HostingPodLabels,
+		csiExposeParam.Affinity,
+	)
 	if err != nil {
 		return errors.Wrap(err, "error to create backup pod")
 	}
@@ -422,8 +430,14 @@ func (e *csiSnapshotExposer) createBackupPVC(ctx context.Context, ownerObject co
 	return created, err
 }
 
-func (e *csiSnapshotExposer) createBackupPod(ctx context.Context, ownerObject corev1.ObjectReference, backupPVC *corev1.PersistentVolumeClaim, operationTimeout time.Duration,
-	label map[string]string, affinity *nodeagent.LoadAffinity) (*corev1.Pod, error) {
+func (e *csiSnapshotExposer) createBackupPod(
+	ctx context.Context,
+	ownerObject corev1.ObjectReference,
+	backupPVC *corev1.PersistentVolumeClaim,
+	operationTimeout time.Duration,
+	label map[string]string,
+	affinity *velerotypes.LoadAffinity,
+) (*corev1.Pod, error) {
 	podName := ownerObject.Name
 
 	containerName := string(ownerObject.UID)
@@ -470,6 +484,11 @@ func (e *csiSnapshotExposer) createBackupPod(ctx context.Context, ownerObject co
 
 	userID := int64(0)
 
+	affinityList := make([]*velerotypes.LoadAffinity, 0)
+	if affinity != nil {
+		affinityList = append(affinityList, affinity)
+	}
+
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
@@ -498,7 +517,7 @@ func (e *csiSnapshotExposer) createBackupPod(ctx context.Context, ownerObject co
 					},
 				},
 			},
-			Affinity: toSystemAffinity(affinity),
+			Affinity: csi.ToSystemAffinity(affinityList),
 			Containers: []corev1.Container{
 				{
 					Name:            containerName,
@@ -526,43 +545,4 @@ func (e *csiSnapshotExposer) createBackupPod(ctx context.Context, ownerObject co
 	}
 
 	return e.kubeClient.CoreV1().Pods(ownerObject.Namespace).Create(ctx, pod, metav1.CreateOptions{})
-}
-
-func toSystemAffinity(loadAffinity *nodeagent.LoadAffinity) *corev1.Affinity {
-	if loadAffinity == nil {
-		return nil
-	}
-
-	requirements := []corev1.NodeSelectorRequirement{}
-	for k, v := range loadAffinity.NodeSelector.MatchLabels {
-		requirements = append(requirements, corev1.NodeSelectorRequirement{
-			Key:      k,
-			Values:   []string{v},
-			Operator: corev1.NodeSelectorOpIn,
-		})
-	}
-
-	for _, exp := range loadAffinity.NodeSelector.MatchExpressions {
-		requirements = append(requirements, corev1.NodeSelectorRequirement{
-			Key:      exp.Key,
-			Values:   exp.Values,
-			Operator: corev1.NodeSelectorOperator(exp.Operator),
-		})
-	}
-
-	if len(requirements) == 0 {
-		return nil
-	}
-
-	return &corev1.Affinity{
-		NodeAffinity: &corev1.NodeAffinity{
-			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-				NodeSelectorTerms: []corev1.NodeSelectorTerm{
-					{
-						MatchExpressions: requirements,
-					},
-				},
-			},
-		},
-	}
 }

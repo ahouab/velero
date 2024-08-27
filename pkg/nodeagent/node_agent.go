@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/vmware-tanzu/velero/pkg/types"
 	"github.com/vmware-tanzu/velero/pkg/util/kube"
 )
 
@@ -75,7 +76,7 @@ type Configs struct {
 	LoadConcurrency *LoadConcurrency `json:"loadConcurrency,omitempty"`
 
 	// LoadAffinity is the config for data path load affinity.
-	LoadAffinity []*LoadAffinity `json:"loadAffinity,omitempty"`
+	LoadAffinity []*types.LoadAffinity `json:"loadAffinity,omitempty"`
 
 	// BackupPVCConfig is the config for backupPVC (intermediate PVC) of snapshot data movement
 	BackupPVCConfig map[string]BackupPVC `json:"backupPVC,omitempty"`
